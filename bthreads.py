@@ -73,7 +73,8 @@ class BThread:
 
 
 #Decorator for BProgram.add_thread()
-def threadFor(program):
+def bthread(program):
+    assert program, "Need to specify program for bthread to be added to"
     def decorator(func):
         program.add_thread(func)
     return decorator
