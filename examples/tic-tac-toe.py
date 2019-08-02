@@ -4,7 +4,7 @@ from bthreads import *
 
 bp = BProgram()
 
-#@addThread(bp)
+@threadFor(bp)
 def inputMove(thread):
     while True:
         thread.sync(request=BEvent("getInput"))
@@ -16,6 +16,7 @@ def inputMove(thread):
 def match(pattern, string):
     return re.findall(pattern, string)
 
+@threadFor(bp)
 def legalMove(thread):
     while True:
         thread.sync(wait=BEventSet("isLegal?", lambda e: match(r'move[0-2] [0-2]$',
@@ -24,6 +25,7 @@ def legalMove(thread):
         thread.sync(request=BEvent("LegalMove"), block=BEvent("getInput"))
         yield
 
+@threadFor(bp)
 def illegalMove(thread):
     while True:
         thread.sync(wait=BEventSet("isIllegalX?",
@@ -33,21 +35,14 @@ def illegalMove(thread):
         thread.sync(request=BEvent("IllegalMove"), block=BEvent("getInput"))
         yield
 
+@threadFor(bp)
 def illegalNegative(thread):
     while True:
         thread.sync(wait=BEventSet("isNegative?",
-                                   lambda e: match(r'^move\-[0-9]+ \-?[0-9]+$', e.name) \
-                                   or match(r'^move\-?[0-9]+ \-[0-9]+$', e.name)))
+                                   lambda e: match(r'^move-[0-9]+ -?[0-9]+$', e.name) \
+                                   or match(r'^move-?[0-9]+ -[0-9]+$', e.name)))
         yield
         thread.sync(request=BEvent("IllegalMove"), block=BEvent("getInput"))
         yield
 
-def main():
-    bp.add_thread(inputMove)
-    bp.add_thread(legalMove)
-    bp.add_thread(illegalMove)
-    bp.add_thread(illegalNegative)
-
-    bp.run()
-
-main()
+bp.run()

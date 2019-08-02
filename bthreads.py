@@ -8,11 +8,10 @@
 TODO:
 [X] Add support for predicates for wait/block (but not request)
 [X] Instead of matching using strings, match with some compound object
-[ ] Add decorator to simplify adding b-threads
+[X] Add decorator to simplify adding b-threads
 [ ] Add support for model checking; see https://bpjs.readthedocs.io/en/develop/verification/index.html
 """
 import sys, logging
-from functools import wraps
 #Set level to logging.DEBUG to see debug messages
 logging.basicConfig(level=logging.INFO)
 
@@ -72,6 +71,12 @@ class BThread:
     def __repr__(self):
         return "Thread:" + self.name
 
+
+#Decorator for BProgram.add_thread()
+def threadFor(program):
+    def decorator(func):
+        program.add_thread(func)
+    return decorator
 
 class BProgram:
     def __init__(self):
