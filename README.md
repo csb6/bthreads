@@ -151,4 +151,112 @@ immensely complex behavior with simple rules that basically say:
 "Do this thing after this event happens, and block this other
 event until you do it." or "Request this thing to happen."
 
-I hope that you find this project interesting!
+## Advanced Usage
+
+While the above examples work well for matching a single
+event, what if you wanted to request/wait for a group of
+events? That's where `BEventSet` comes in handy. For
+example, consider code that reacts to a user entering input:
+
+```
+from bthreads import *
+bp = BProgram()
+
+@bthread(bp)
+def getInput(thread):
+    thread.sync(request=BEvent("getInput"))
+    yield
+    answer = input("Would you like to view a contrived example? [y/n]")
+    if answer.lower() == "y":
+       thread.sync(request=BEvent("contrivedExample"))
+    elif answer.lower() == "n":
+       thread.sync(request=BEvent("noExample"))
+    yield
+
+@bthread(bp)
+def rejectAnswer(thread):
+    thread.sync(wait=BEventSet("answers", [BEvent("contrivedExample"), BEvent("noExample")]))
+    yield
+    thread.sync(request=BEvent("Nevermind"), block=BEvent("getInput"))
+    yield
+
+bp.run()
+```
+
+Output:
+
+```
+Event Occurred: getInput
+Would you like to view a contrived example? [y/n]y
+Event Occurred: contrivedExample
+Event Occurred: Nevermind
+```
+
+The first b-thread, `getInput`, requests different events based on the user's
+choice. `rejectAnswer` waits for either event to occur, with all the events it
+wants to match with in a list within a `BEventSet`. Note that requests can't
+use BEventSets; you can only request specific BEvents.
+
+This format works well if you only have a few events, but what if the events
+you need to catch have a wide variety of names? Waiting for any event starting
+with "movePiece", for example, in a chess program would require you to list all
+possible squares on the board! Fortunately, this library has an easier way: predicates.
+
+In addition to accepting lists of BEvent literals, `BEventSet` constructors can
+accept a predicate, which is a function that returns True/False if the given
+event does/doesn't match the criteria for inclusion in the event set. For example:
+
+```
+from bthreads import *
+bp = BProgram()
+
+@bthread(bp)
+def enterMove(thread):
+    while True:
+        thread.sync(request=BEvent("enterMove"))
+        yield
+        coords = input("Enter coords 'x y':")
+        thread.sync(request=BEvent("move"+coords))
+        yield
+
+@bthread(bp)
+def switchTurn(thread):
+    isBlueTurn = True
+    while True:
+        thread.sync(wait=BEventSet("moves", lambda e: e.name.startswith("move")))
+        yield
+        if isBlueTurn:
+            thread.sync(request=BEvent("BlueTurn"))
+        else:
+            thread.sync(request=BEvent("RedTurn"))
+        isBlueTurn = not isBlueTurn
+        yield
+
+@bthread(bp)
+def endTurn(thread):
+    while True:
+        thread.sync(wait=BEventSet("moves", lambda e: e.name.startswith("move")))
+        yield
+        thread.sync(wait=BEventSet("turnEnded?", lambda e: e.name.endswith("Turn")), block=BEvent("enterMove"))
+        yield
+
+bp.run()
+```
+
+This program allows the user to enter in moves as coordinates, then
+alternates between red and blue turns. `switchTurn` waits until any event
+with a name starting with "move" to occur, then requests "BlueTurn" or
+"RedTurn"; after each loop iteration, a flag is flipped, ensuring that
+every time input is entered, the turn switches.
+
+The third bthread, `endTurn`, starting blocking "enterMove", the event
+which will trigger another user input, after a move occurs (in the same way
+as `switchTurn` does). As soon as `switchTurn` triggers a Blue or RedTurn event,
+the block lifts, and "enterMove" can once again happen. This behavior continues
+in an infinite loop: enter move, turn is blue/red, turn ends, repeat.
+
+While this example used a short lambda to determine which events belonged in the
+event set, any Python function returning True/False would work the same way.
+Just pass in the function name as the second argument in `BEventSet()`
+
+I hope you find this project useful and interesting!

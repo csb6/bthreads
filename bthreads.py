@@ -235,7 +235,9 @@ class BProgram:
             del self.waiters[event]
         #Finally, notify all waiter objects under matching event sets (if any)
         notifiedSets = [] #Track for bulk removal
-        for eventSet, waiters in self.waiterSets.items():
+        #Have to copy waiterSets because notifying waiters could add new
+        #eventSets to waiterSets during iteration
+        for eventSet, waiters in self.waiterSets.copy().items():
             if event in eventSet:
                 self.notify(event, waiters)
                 #Remove the waiters once they've been notified
@@ -244,10 +246,9 @@ class BProgram:
             del self.waiterSets[eventSet]
 
     def run(self):
-        self.step()
-        self.decide()
-        logging.debug("--END OF STEP--")
-        while self.requests:
+        while True:
             self.step()
             self.decide()
             logging.debug("--END OF STEP--")
+            if not self.requests:
+                break
