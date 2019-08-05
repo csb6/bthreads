@@ -6,6 +6,7 @@
         being added to an event queue.
 
 TODO:
+[X] Add some way to assert invariants about data stored in BEvents
 [ ] Add support for model checking; see https://bpjs.readthedocs.io/en/develop/verification/index.html
 """
 import sys, logging
@@ -44,8 +45,10 @@ class BEvent:
 class BEventSet:
     """A generalized event which recognizes its members by matching its
        predicate (a boolean lambda)"""
-    def __init__(self, name, predicate):
+    def __init__(self, name, predicate, keys=[]):
+        assert type(keys) == list, "Arg 3 is keys"
         self.name = name
+        self.keys = keys #Keys assumed to be in the event's data
         if type(predicate) != list:
             self.predicate = predicate #Boolean function determining what's in set
         else:
@@ -58,8 +61,15 @@ class BEventSet:
     def __hash__(self):
         return hash((self.name, type(self)))
 
-    def __contains__(self, other):
-        return self.predicate(other)
+    def __contains__(self, event):
+        for key in self.keys:
+            #Ensure keys used in predicate won't raise KeyError
+            if key not in event:
+                logging.debug(str(key) + " missing from " + str(event) \
+                              + " when checked by " + str(self))
+                return False
+
+        return self.predicate(event)
 
     def __repr__(self):
         return "EventSet:" + self.name

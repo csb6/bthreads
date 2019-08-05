@@ -11,7 +11,8 @@ def inputMove(thread):
         yield
         coords = input("Enter move 'x y':").split()
         move = BEvent("move")
-        move["coords"] = [int(i) for i in coords]
+        if len(coords) == 2:
+            move["coords"] = [int(i) for i in coords]
         thread.sync(request=move)
         yield
 
@@ -19,9 +20,10 @@ def inputMove(thread):
 def legalMove(thread):
     while True:
         thread.sync(wait=BEventSet("isLegal?",
-                                   lambda e: e.name == "move" and "coords" in e \
+                                   lambda e: e.name == "move" \
                                    and e["coords"][0] in range(3) \
-                                   and e["coords"][1] in range(3)))
+                                   and e["coords"][1] in range(3),\
+                                   keys=["coords"]))
         yield
         legalMove = BEvent("LegalMove")
         legalMove["coords"] = thread.lastEvent["coords"]
@@ -32,8 +34,9 @@ def legalMove(thread):
 def illegalMove(thread):
     while True:
         thread.sync(wait=BEventSet("isIllegalX?",
-                                   lambda e: e.name == "move" and "coords" in e \
-                                   and (e["coords"][0] > 2 or e["coords"][1] > 2)))
+                                   lambda e: e.name == "move" \
+                                   and (e["coords"][0] > 2 or e["coords"][1] > 2),\
+                                   keys=["coords"]))
         yield
         thread.sync(request=BEvent("IllegalMove"), block=BEvent("getInput"))
         yield
@@ -42,9 +45,9 @@ def illegalMove(thread):
 def illegalNegative(thread):
     while True:
         thread.sync(wait=BEventSet("isNegative?",
-                                   lambda e: e.name == "move" and \
-                                   "coords" in e and (e["coords"][0] < 0 \
-                                                      or e["coords"][1] < 0)))
+                                   lambda e: e.name == "move"\
+                                   and (e["coords"][0] < 0 or e["coords"][1] < 0), \
+                                   keys=["coords"]))
         yield
         thread.sync(request=BEvent("IllegalMove"), block=BEvent("getInput"))
         yield
