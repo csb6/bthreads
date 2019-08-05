@@ -10,7 +10,7 @@ TODO:
 [X] Instead of matching using strings, match with some compound object
 [X] Add decorator to simplify adding b-threads
 [ ] Add support for model checking; see https://bpjs.readthedocs.io/en/develop/verification/index.html
-[ ] Make BEvents, not BEvents' string names, be the keys in BProgram.waiters
+[X] Make BEvents, not BEvents' string names, be the keys in BProgram.waiters
 [ ] Combine BProgram.waitSets with BProgram.waiters so BEvents and BEventSets can be
     checked in the same way
 """
@@ -27,6 +27,9 @@ class BEvent:
 
     def __eq__(self, other):
         return type(self) == type(other) and self.name == other.name
+
+    def __hash__(self):
+        return hash(self.name)
 
     def __repr__(self):
         return "Event:" + self.name
@@ -87,7 +90,7 @@ class BProgram:
         self.threads = [] #b-threads not currently waiting for an event
         self.requests = [] #Proposed events
         self.queue = [] #Approved requests; list of events to execute
-        self.waiters = {} #eventName: [threads waiting for event]
+        self.waiters = {} #event: [threads waiting for event]
         self.waiterSets = [] #Waiters that are BEventSets
         self.blocked = [] #Names of events not currently allowed to occur
 
@@ -113,11 +116,11 @@ class BProgram:
             self.blocked.append(blockee)
             waiter.blocking.append(blockee)
         if type(trigger) == BEvent:
-            if trigger.name not in self.waiters.keys():
-                self.waiters[trigger.name] = []
+            if trigger not in self.waiters.keys():
+                self.waiters[trigger] = []
             #When waiter is triggered, it will be
             #removed from waiter list
-            self.waiters[trigger.name].append(waiter)
+            self.waiters[trigger].append(waiter)
         else:
             #When an event in the set is triggered, waiter will be removed
             #from waiter set list
@@ -148,7 +151,7 @@ class BProgram:
             #Permanent blocking of an event; can't be removed
             self.blocked.append(block)
 
-    def notify(self, eventName, waiterList):
+    def notify(self, waiterList):
         for waiter in waiterList:
             #Remove any corresponding blocks
             #set to expire after wait occurs
@@ -196,14 +199,14 @@ class BProgram:
         event = self.queue.pop(0)
         print("Event Occurred:", event.name)
         #Next, notify all waiter objects for that event (if any)
-        if event.name in self.waiters.keys():
-            self.notify(event.name, self.waiters[event.name])
+        if event in self.waiters.keys():
+            self.notify(self.waiters[event])
             #Remove the waiters once they've been notified
-            del self.waiters[event.name]
+            del self.waiters[event]
         #Finally, notify all waiter objects with matching event sets (if any)
         for i, item in enumerate(self.waiterSets):
             if event in item["trigger"]:
-                self.notify(event.name, item["waiters"])
+                self.notify(item["waiters"])
                 #Remove the waiters once they've been notified
                 del self.waiterSets[i]
                 break
