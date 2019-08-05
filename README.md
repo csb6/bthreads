@@ -11,7 +11,7 @@ if any, to trigger. When an event triggers, all of the objects that requested
 it or decided to wait for it get notified and regain control, allowing them
 to request, wait for, or block more events.
 
-While many BP implementations are fully concurrent, this implementation is
+While many BP implementations are fully parallel, this implementation is
 single-threaded, making use of Python generators as a sort of coroutine.
 
 ## Installation
@@ -22,11 +22,13 @@ Python module. Feel free to look at/run the example programs
 to see the features of the library. Be aware that this is an
 experimental project and so subject to unstable changes/bugs.
 
+The module is tested with 3.7.0, but should work with any Python 3
+version.
+
 ## Usage
 
 Usage is fairly simple. Firstly, you need to create a BProgram object, which
-keeps track of the b-threads and schedules/decides which event occurs. Doing so
-is simple:
+keeps track of the b-threads and schedules/decides which event occurs:
 
 ```
 from bthreads import *
@@ -36,7 +38,7 @@ bp = BProgram()
 
 Creating bthreads is as easy as creating normal Python
 generators. Just include your BProgram instance as an argument
-in the decorator to add a new b-thread to it:
+in the decorator in order to add a new b-thread to it:
 
 ```
 @bthread(bp)
@@ -57,8 +59,8 @@ Event occurred: World!
 and also including a handy method, `sync()`, which allows the function
 to request or wait for an event of set of events, with an option to
 block an event/set of events until that happens (not used here).
-`sayWorld` requested an event, yielded back control, and since no other
-b-thread blocked the request, the event occurred. Here's a slightly more
+`sayWorld` requests an event, yields back control, and since no other
+b-thread blocked the request, the event occurs. Here's a slightly more
 complex example:
 
 ```
@@ -149,5 +151,4 @@ immensely complex behavior with simple rules that basically say:
 "Do this thing after this event happens, and block this other
 event until you do it." or "Request this thing to happen."
 
-I hope that this project inspires you to thing about programming
-a little differently than you're used to!
+I hope that you find this project interesting!
