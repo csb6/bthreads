@@ -6,13 +6,7 @@
         being added to an event queue.
 
 TODO:
-[X] Add support for predicates for wait/block (but not request)
-[X] Instead of matching using strings, match with some compound object
-[X] Add decorator to simplify adding b-threads
 [ ] Add support for model checking; see https://bpjs.readthedocs.io/en/develop/verification/index.html
-[X] Make BEvents, not BEvents' string names, be the keys in BProgram.waiters
-[ ] Combine BProgram.waitSets with BProgram.waiters so BEvents and BEventSets can be
-    checked in the same way
 """
 import sys, logging
 #Set level to logging.DEBUG to see debug messages
@@ -29,7 +23,7 @@ class BEvent:
         return type(self) == type(other) and self.name == other.name
 
     def __hash__(self):
-        return hash(self.name)
+        return hash((self.name, type(self)))
 
     def __repr__(self):
         return "Event:" + self.name
@@ -46,6 +40,9 @@ class BEventSet:
 
     def __eq__(self, other):
         return type(self) == type(other) and self.name == other.name
+
+    def __hash__(self):
+        return hash((self.name, type(self)))
 
     def __contains__(self, other):
         return self.predicate(other)
@@ -91,7 +88,7 @@ class BProgram:
         self.requests = [] #Proposed events
         self.queue = [] #Approved requests; list of events to execute
         self.waiters = {} #event: [threads waiting for event]
-        self.waiterSets = [] #Waiters that are BEventSets
+        self.waiterSets = {} #event set: [threads waiting for event set]
         self.blocked = [] #Names of events not currently allowed to occur
 
     def add_thread(self, callback):
@@ -108,6 +105,7 @@ class BProgram:
         assert type(blockee) in (BEvent, BEventSet) or blockee == "", "Blockee " \
             + str(blockee) + "is not a BEvent"
         assert type(waiter) == BThread, "Waiter " + str(waiter) + "is not a BThread"
+        assert waiter in self.threads, "Waiter" + str(waiter) + "not in threads list"
         logging.debug(waiter.name + " is waiting for " + str(trigger))
         if blockee:
             #When waiter who is blocking is triggered, it will remove
@@ -124,7 +122,9 @@ class BProgram:
         else:
             #When an event in the set is triggered, waiter will be removed
             #from waiter set list
-            self.waiterSets.append({"trigger": trigger, "waiters": [waiter]})
+            if trigger not in self.waiterSets.keys():
+                self.waiterSets[trigger] = []
+            self.waiterSets[trigger].append(waiter)
 
         #Since it is now waiting, remove from normal pool of threads
         self.threads.remove(waiter)
@@ -203,13 +203,15 @@ class BProgram:
             self.notify(self.waiters[event])
             #Remove the waiters once they've been notified
             del self.waiters[event]
-        #Finally, notify all waiter objects with matching event sets (if any)
-        for i, item in enumerate(self.waiterSets):
-            if event in item["trigger"]:
-                self.notify(item["waiters"])
+        #Finally, notify all waiter objects under matching event sets (if any)
+        notifiedSets = [] #Track for bulk removal
+        for eventSet, waiters in self.waiterSets.items():
+            if event in eventSet:
+                self.notify(waiters)
                 #Remove the waiters once they've been notified
-                del self.waiterSets[i]
-                break
+                notifiedSets.append(eventSet)
+        for eventSet in notifiedSets:
+            del self.waiterSets[eventSet]
 
     def run(self):
         self.step()
