@@ -19,8 +19,8 @@ def match(pattern, string):
 @bthread(bp)
 def legalMove(thread):
     while True:
-        thread.sync(wait=BEventSet("isLegal?", lambda e: match(r'move[0-2] [0-2]$',
-                                                                 e.name)))
+        thread.sync(wait=BEventSet("isLegal?",
+                                   lambda e: match(r'move[0-2] [0-2]$', e.name)))
         yield
         thread.sync(request=BEvent("LegalMove"), block=BEvent("getInput"))
         yield

@@ -10,6 +10,9 @@ TODO:
 [X] Instead of matching using strings, match with some compound object
 [X] Add decorator to simplify adding b-threads
 [ ] Add support for model checking; see https://bpjs.readthedocs.io/en/develop/verification/index.html
+[ ] Make BEvents, not BEvents' string names, be the keys in BProgram.waiters
+[ ] Combine BProgram.waitSets with BProgram.waiters so BEvents and BEventSets can be
+    checked in the same way
 """
 import sys, logging
 #Set level to logging.DEBUG to see debug messages
@@ -96,8 +99,9 @@ class BProgram:
             sys.exit(1)
         self.threads.append(BThread(name, callback, self))
 
-    def wait(self, trigger, waiter, blockee=""):
-        assert type(trigger) in (BEvent, BEventSet), "Trigger " + str(trigger) + "is not a BEvent/Set"
+    def wait(self, trigger, waiter, blockee):
+        assert type(trigger) in (BEvent, BEventSet), "Trigger " + str(trigger) \
+            + " is not a BEvent/Set"
         assert type(blockee) in (BEvent, BEventSet) or blockee == "", "Blockee " \
             + str(blockee) + "is not a BEvent"
         assert type(waiter) == BThread, "Waiter " + str(waiter) + "is not a BThread"
@@ -122,9 +126,9 @@ class BProgram:
         #Since it is now waiting, remove from normal pool of threads
         self.threads.remove(waiter)
 
-    def sync(self, thread, wait, request, block):
+    def sync(self, thread, wait="", request="", block=""):
         assert not wait or not request, "Can't have request/wait in 1 statement"
-        assert wait or request, "Need to request OR wait for something"
+        assert wait or request or block, "Need to have wait/request/block"
         assert type(request) == BEvent or request == "", "Request needs to be BEvent"
         assert type(wait) in (BEvent, BEventSet) or wait == "", "Wait needs to be BEvent/Set"
         assert type(block) in (BEvent, BEventSet) or block == "", "Block needs to be BEvent/Set"
@@ -136,16 +140,13 @@ class BProgram:
         if request:
             logging.debug(thread.name + " requested " + str(request))
             self.requests.append(request)
-            if block:
-                #Optional event block removed when done waiting
-                self.wait(trigger=request, waiter=thread, blockee=block)
-            else:
-                self.wait(trigger=request, waiter=thread)
+            #Optional block of an event; removed once request or wait is met
+            self.wait(trigger=request, waiter=thread, blockee=block)
         elif wait:
-            if block:
-                self.wait(trigger=wait, waiter=thread, blockee=block)
-            else:
-                self.wait(trigger=wait, waiter=thread)
+            self.wait(trigger=wait, waiter=thread, blockee=block)
+        elif block:
+            #Permanent blocking of an event; can't be removed
+            self.blocked.append(block)
 
     def notify(self, eventName, waiterList):
         for waiter in waiterList:
