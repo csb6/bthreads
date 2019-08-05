@@ -53,17 +53,71 @@ def illegalNegative(thread):
         yield
 
 @bthread(bp)
-def trackOccupied(thread):
-    moves = []
+def switchTurn(thread):
+    isXTurn = True
+    thread.sync(request=BEvent("isXTurn"), block=BEvent("getInput"))
+    yield
     while True:
         thread.sync(wait=BEvent("LegalMove"))
         yield
+        turn = None
+        if isXTurn:
+            turn = BEvent("XTookTurn")
+            turn["player"] = "X"
+        else:
+            turn = BEvent("OTookTurn")
+            turn["player"] = "O"
+        turn["coords"] = thread.lastEvent["coords"]
+        thread.sync(request=turn, block=BEvent("getInput"))
+        isXTurn = not isXTurn
+        yield
+
+@bthread(bp)
+def trackPositions(thread):
+    moves = []
+    while True:
+        thread.sync(wait=BEventSet("turnTaken", lambda e: e.name.endswith("TookTurn")))
+        yield
         coords = thread.lastEvent["coords"]
+        player = thread.lastEvent["player"]
         if coords in moves:
             thread.sync(request=BEvent("OccupiedSpace"), block=BEvent("getInput"))
         else:
-            thread.sync(request=BEvent("MovedSuccessfully"), block=BEvent("getInput"))
             moves.append(coords)
+            success = BEvent("MovedSuccessfully")
+            success["moves"] = moves
+            success["player"] = player
+            thread.sync(request=success, block=BEvent("getInput"))
+        yield
+
+@bthread(bp)
+def determineWin(thread):
+    while True:
+        thread.sync(wait=BEvent("MovedSuccessfully"))
+        yield
+        moves = thread.lastEvent["moves"]
+        player = thread.lastEvent["player"]
+        winner = False
+        for coordSet in ([c[0] for c in moves], [c[1] for c in moves]):
+            for uniqCoord in set(coordSet):
+                if coordSet.count(uniqCoord) == 3:
+                    winner = True
+                    break
+        if winner:
+            win = BEvent("PlayerWon")
+            win["player"] = player
+            thread.sync(request=win, block=BEvent("getInput"))
+        yield
+
+@bthread(bp)
+def determineWinner(thread):
+    while True:
+        thread.sync(wait=BEvent("PlayerWon"))
+        yield
+        if thread.lastEvent["player"] == "X":
+            thread.sync(request=BEvent("XWins"), block=BEvent("getInput"))
+        else:
+            thread.sync(request=BEvent("OWins"), block=BEvent("getInput"))
         yield
 
 bp.run()
