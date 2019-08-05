@@ -9,28 +9,31 @@ def inputMove(thread):
     while True:
         thread.sync(request=BEvent("getInput"))
         yield
-        move = input("Enter move 'x y':")
-        thread.sync(request=BEvent("move"+move))
+        coords = input("Enter move 'x y':").split()
+        move = BEvent("move")
+        move["coords"] = [int(i) for i in coords]
+        thread.sync(request=move)
         yield
-
-def match(pattern, string):
-    return re.findall(pattern, string)
 
 @bthread(bp)
 def legalMove(thread):
     while True:
         thread.sync(wait=BEventSet("isLegal?",
-                                   lambda e: match(r'move[0-2] [0-2]$', e.name)))
+                                   lambda e: e.name == "move" and "coords" in e \
+                                   and e["coords"][0] in range(3) \
+                                   and e["coords"][1] in range(3)))
         yield
-        thread.sync(request=BEvent("LegalMove"), block=BEvent("getInput"))
+        legalMove = BEvent("LegalMove")
+        legalMove["coords"] = thread.lastEvent["coords"]
+        thread.sync(request=legalMove, block=BEvent("getInput"))
         yield
 
 @bthread(bp)
 def illegalMove(thread):
     while True:
         thread.sync(wait=BEventSet("isIllegalX?",
-                                   lambda e: match(r'^move[3-9] [0-9]$', e.name) \
-                                   or match(r'^move[0-9]+ [3-9]+$', e.name)))
+                                   lambda e: e.name == "move" and "coords" in e \
+                                   and (e["coords"][0] > 2 or e["coords"][1] > 2)))
         yield
         thread.sync(request=BEvent("IllegalMove"), block=BEvent("getInput"))
         yield
@@ -39,10 +42,25 @@ def illegalMove(thread):
 def illegalNegative(thread):
     while True:
         thread.sync(wait=BEventSet("isNegative?",
-                                   lambda e: match(r'^move-[0-9]+ -?[0-9]+$', e.name) \
-                                   or match(r'^move-?[0-9]+ -[0-9]+$', e.name)))
+                                   lambda e: e.name == "move" and \
+                                   "coords" in e and (e["coords"][0] < 0 \
+                                                      or e["coords"][1] < 0)))
         yield
         thread.sync(request=BEvent("IllegalMove"), block=BEvent("getInput"))
+        yield
+
+@bthread(bp)
+def trackOccupied(thread):
+    moves = []
+    while True:
+        thread.sync(wait=BEvent("LegalMove"))
+        yield
+        coords = thread.lastEvent["coords"]
+        if coords in moves:
+            thread.sync(request=BEvent("OccupiedSpace"), block=BEvent("getInput"))
+        else:
+            thread.sync(request=BEvent("MovedSuccessfully"), block=BEvent("getInput"))
+            moves.append(coords)
         yield
 
 bp.run()

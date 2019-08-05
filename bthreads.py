@@ -13,11 +13,23 @@ import sys, logging
 logging.basicConfig(level=logging.INFO)
 
 class BEvent:
+    """A triggerable item which can potentially carried data;
+    when triggered, waiting BThreads are notified"""
     #Shortcut callbacks for BEventSet's predicate
     ALL = lambda e: True #Match with all events
     NONE = lambda e: False #Match with no events
     def __init__(self, name):
         self.name = name
+        self.data = {}
+
+    def __setitem__(self, key, value):
+        self.data[key] = value
+
+    def __getitem__(self, key):
+        return self.data[key]
+
+    def __contains__(self, key):
+        return key in self.data
 
     def __eq__(self, other):
         return type(self) == type(other) and self.name == other.name
@@ -30,6 +42,8 @@ class BEvent:
 
 
 class BEventSet:
+    """A generalized event which recognizes its members by matching its
+       predicate (a boolean lambda)"""
     def __init__(self, name, predicate):
         self.name = name
         if type(predicate) != list:
@@ -52,11 +66,15 @@ class BEventSet:
 
 
 class BThread:
+    """Procedure with several steps, each of which yields; acts like
+       a coroutine which can request, wait for, or block events from
+       happening in its assigned program"""
     def __init__(self, name, callback, program):
         self.name = name
         self.program = program #BProgram this thread belongs to
         self.blocking = [] #All events currently being blocked by this object
         self.callback = callback(self)
+        self.lastEvent = None
 
     def __eq__(self, other):
         return type(self) == type(other) and self.name == other.name
@@ -64,8 +82,9 @@ class BThread:
     def sync(self, wait="", request="", block=""):
         self.program.sync(self, wait, request, block)
 
-    def update(self):
+    def update(self, lastEvent=None):
         try:
+            self.lastEvent = lastEvent
             next(self.callback)
             return True
         except StopIteration:
@@ -83,6 +102,8 @@ def bthread(program):
     return decorator
 
 class BProgram:
+    """Schedules multiple BThreads, blocking/triggering events
+       as specified by them"""
     def __init__(self):
         self.threads = [] #b-threads not currently waiting for an event
         self.requests = [] #Proposed events
@@ -92,7 +113,6 @@ class BProgram:
         self.blocked = [] #Names of events not currently allowed to occur
 
     def add_thread(self, callback):
-        #Having thread share name means less duplicated/meaningless names
         name = "bt-" + callback.__name__
         if name in [t.name for t in self.threads]:
             print("Error: Name of Thread:", name, "isn't unique")
@@ -151,7 +171,7 @@ class BProgram:
             #Permanent blocking of an event; can't be removed
             self.blocked.append(block)
 
-    def notify(self, waiterList):
+    def notify(self, event, waiterList):
         for waiter in waiterList:
             #Remove any corresponding blocks
             #set to expire after wait occurs
@@ -160,7 +180,7 @@ class BProgram:
                     self.blocked.remove(blockee)
             waiter.blocking = []
             self.threads.append(waiter)
-            waiter.update()
+            waiter.update(event)
 
     def step(self):
         #First, allow all threads to make requests, make wait statements,
@@ -200,14 +220,14 @@ class BProgram:
         print("Event Occurred:", event.name)
         #Next, notify all waiter objects for that event (if any)
         if event in self.waiters.keys():
-            self.notify(self.waiters[event])
+            self.notify(event, self.waiters[event])
             #Remove the waiters once they've been notified
             del self.waiters[event]
         #Finally, notify all waiter objects under matching event sets (if any)
         notifiedSets = [] #Track for bulk removal
         for eventSet, waiters in self.waiterSets.items():
             if event in eventSet:
-                self.notify(waiters)
+                self.notify(event, waiters)
                 #Remove the waiters once they've been notified
                 notifiedSets.append(eventSet)
         for eventSet in notifiedSets:
