@@ -23,7 +23,7 @@ def legalMove(thread):
                                    lambda e: e.name == "move" \
                                    and e["coords"][0] in range(3) \
                                    and e["coords"][1] in range(3),\
-                                   keys=["coords"]))
+                                   needs=["coords"]))
         yield
         legalMove = BEvent("LegalMove")
         legalMove["coords"] = thread.lastEvent["coords"]
@@ -36,7 +36,7 @@ def illegalMove(thread):
         thread.sync(wait=BEventSet("isIllegalX?",
                                    lambda e: e.name == "move" \
                                    and (e["coords"][0] > 2 or e["coords"][1] > 2),\
-                                   keys=["coords"]))
+                                   needs=["coords"]))
         yield
         thread.sync(request=BEvent("IllegalMove"), block=BEvent("getInput"))
         yield
@@ -47,7 +47,7 @@ def illegalNegative(thread):
         thread.sync(wait=BEventSet("isNegative?",
                                    lambda e: e.name == "move"\
                                    and (e["coords"][0] < 0 or e["coords"][1] < 0), \
-                                   keys=["coords"]))
+                                   needs=["coords"]))
         yield
         thread.sync(request=BEvent("IllegalMove"), block=BEvent("getInput"))
         yield
@@ -109,20 +109,15 @@ def determineWin(thread):
                     winner = True
                     break
         if winner:
-            win = BEvent("PlayerWon")
+            win = BEvent(player + "Won")
             win["player"] = player
             thread.sync(request=win, block=BEvent("getInput"))
         yield
 
 @bthread(bp)
-def determineWinner(thread):
-    while True:
-        thread.sync(wait=BEvent("PlayerWon"))
-        yield
-        if thread.lastEvent["player"] == "X":
-            thread.sync(request=BEvent("XWins"), block=BEvent("getInput"))
-        else:
-            thread.sync(request=BEvent("OWins"), block=BEvent("getInput"))
-        yield
+def endGame(thread):
+    thread.sync(wait=BEventSet("victory", lambda e: e.name.endswith("Won")))
+    yield
+    sys.exit(0)
 
 bp.run()

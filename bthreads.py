@@ -8,6 +8,7 @@
 TODO:
 [X] Add some way to assert invariants about data stored in BEvents
 [ ] Add support for model checking; see https://bpjs.readthedocs.io/en/develop/verification/index.html
+[X] Fix tic-tac-toe so only 3 X's/3 O's in a row wins
 """
 import sys, logging
 #Set level to logging.DEBUG to see debug messages
@@ -45,10 +46,10 @@ class BEvent:
 class BEventSet:
     """A generalized event which recognizes its members by matching its
        predicate (a boolean lambda)"""
-    def __init__(self, name, predicate, keys=[]):
-        assert type(keys) == list, "Arg 3 is keys"
+    def __init__(self, name, predicate, needs=[]):
+        assert type(needs) == list, "Arg 3 is needs, an array"
         self.name = name
-        self.keys = keys #Keys assumed to be in the event's data
+        self.needs = needs #Keys assumed to be matching events' data
         if type(predicate) != list:
             self.predicate = predicate #Boolean function determining what's in set
         else:
@@ -62,8 +63,8 @@ class BEventSet:
         return hash((self.name, type(self)))
 
     def __contains__(self, event):
-        for key in self.keys:
-            #Ensure keys used in predicate won't raise KeyError
+        for key in self.needs:
+            #Ensure keys needed in predicate won't raise KeyError
             if key not in event:
                 logging.debug(str(key) + " missing from " + str(event) \
                               + " when checked by " + str(self))
@@ -228,6 +229,7 @@ class BProgram:
 
         event = self.queue.pop(0)
         print("Event Occurred:", event.name)
+        logging.debug(" Data:" + str(event.data))
         #Next, notify all waiter objects for that event (if any)
         if event in self.waiters.keys():
             self.notify(event, self.waiters[event])
