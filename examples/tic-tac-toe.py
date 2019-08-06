@@ -11,7 +11,7 @@ def inputMove(thread):
         yield
         coords = input("Enter move 'x y':").split()
         move = BEvent("move")
-        if len(coords) == 2:
+        if len(coords) == 2 and all([i.isnumeric() for i in coords]):
             move["coords"] = [int(i) for i in coords]
         thread.sync(request=move)
         yield
@@ -74,18 +74,23 @@ def switchTurn(thread):
 
 @bthread(bp)
 def trackPositions(thread):
-    moves = []
+    xMoves = []
+    oMoves = []
     while True:
         thread.sync(wait=BEventSet("turnTaken", lambda e: e.name.endswith("TookTurn")))
         yield
         coords = thread.lastEvent["coords"]
         player = thread.lastEvent["player"]
-        if coords in moves:
+        if coords in xMoves or coords in oMoves:
             thread.sync(request=BEvent("OccupiedSpace"), block=BEvent("getInput"))
         else:
-            moves.append(coords)
             success = BEvent("MovedSuccessfully")
-            success["moves"] = moves
+            if player == "X":
+                xMoves.append(coords)
+                success["moves"] = xMoves
+            else:
+                oMoves.append(coords)
+                success["moves"] = oMoves
             success["player"] = player
             thread.sync(request=success, block=BEvent("getInput"))
         yield
