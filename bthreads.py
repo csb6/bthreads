@@ -101,6 +101,11 @@ class BThread:
         except StopIteration:
             return False
 
+    def forwardLastEvent(self, newName):
+        event = BEvent(newName)
+        event.data = self.lastEvent.data.copy()
+        return event
+
     def __repr__(self):
         return "Thread:" + self.name
 
