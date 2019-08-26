@@ -9,6 +9,12 @@ TODO:
 [X] Add some way to assert invariants about data stored in BEvents
 [ ] Add support for model checking; see https://bpjs.readthedocs.io/en/develop/verification/index.html
 [X] Fix tic-tac-toe so only 3 X's/3 O's in a row wins
+[X] Add way for bthread to restart itself
+[X] Add way for wait to restart a bthread if a certain event/event set occurs
+    ( ex: thread.sync(wait=BEventSet(...), restart=BEvent("foo")) )
+[ ] Expand restart option to work for event sets
+[ ] Expand restart option to work for requests
+[ ] Add less awkward way to specify ranges of data (e.g. (0, 0) -> (2, 2))
 """
 import sys, logging
 #Set level to logging.DEBUG to see debug messages
@@ -80,18 +86,22 @@ class BThread:
     """Procedure with several steps, each of which yields; acts like
        a coroutine which can request, wait for, or block events from
        happening in its assigned program"""
-    def __init__(self, name, callback, program):
+    def __init__(self, name, func, program):
         self.name = name
         self.program = program #BProgram this thread belongs to
         self.blocking = [] #All events currently being blocked by this object
-        self.callback = callback(self)
+        self.func = func
+        self.callback = func(self)
         self.lastEvent = None
+
+    def restart(self):
+        self.callback = self.func(self)
 
     def __eq__(self, other):
         return type(self) == type(other) and self.name == other.name
 
-    def sync(self, wait="", request="", block=""):
-        self.program.sync(self, wait, request, block)
+    def sync(self, wait="", request="", block="", restart=""):
+        self.program.sync(self, wait, request, block, restart)
 
     def update(self, lastEvent=None):
         try:
@@ -112,7 +122,7 @@ class BThread:
 
 #Decorator for BProgram.add_thread()
 def bthread(program):
-    assert program, "Need to specify program for bthread to be added to"
+    assert type(program) == BProgram, "Need to specify BProgram for bthread to be added to"
     def decorator(func):
         program.add_thread(func)
     return decorator
@@ -135,7 +145,39 @@ class BProgram:
             sys.exit(1)
         self.threads.append(BThread(name, callback, self))
 
-    def wait(self, trigger, waiter, blockee):
+    def setup_restart(self, trigger, waiter, restarter):
+        #Create new thread which waits for the restart event/event set
+        #and when triggered, deletes the thread which specified the
+        #restart event
+        if type(restarter) == BEvent:
+            def func(thread, restarter=restarter, waiterTrigger=trigger, waiter=waiter):
+                thread.sync(wait=restarter)
+                yield
+                if waiterTrigger in self.waiters.keys():
+                    for trigg in self.waiters[waiterTrigger]:
+                        if trigg == waiter:
+                            #Restart the waiter obj that created this restart-thread
+                            #and move it from waiting dict back into thread pool
+                            trigg.restart()
+                            self.threads.append(trigg)
+                            self.waiters[waiterTrigger].remove(trigg)
+                            logging.debug("Restart-thread for " + waiter.name \
+                                          + " restarted " + waiter.name)
+                            #Delete yourself
+                            for i in self.waiters[restarter]:
+                                if i == thread:
+                                    del i
+                                    logging.debug("Restart-thread for " \
+                                                  + waiter.name + " deleted itself" )
+                                    break
+                            break
+            func.__name__ = "_" + waiter.name + "-restarter"
+            #Bypass thread pool; immediately make into a waiter
+            thread = BThread(func.__name__, func, self)
+            self.threads.append(thread)
+            self.wait(restarter, thread, "", "")
+
+    def wait(self, trigger, waiter, blockee, restarter):
         assert type(trigger) in (BEvent, BEventSet), "Trigger " + str(trigger) \
             + " is not a BEvent/Set"
         assert type(blockee) in (BEvent, BEventSet) or blockee == "", "Blockee " \
@@ -149,6 +191,8 @@ class BProgram:
             logging.debug("  " + waiter.name + " blocked " + str(blockee))
             self.blocked.append(blockee)
             waiter.blocking.append(blockee)
+        elif restarter:
+            self.setup_restart(trigger, waiter, restarter)
         if type(trigger) == BEvent:
             if trigger not in self.waiters.keys():
                 self.waiters[trigger] = []
@@ -165,9 +209,12 @@ class BProgram:
         #Since it is now waiting, remove from normal pool of threads
         self.threads.remove(waiter)
 
-    def sync(self, thread, wait="", request="", block=""):
+    def sync(self, thread, wait="", request="", block="", restart=""):
         assert not wait or not request, "Can't have request/wait in 1 statement"
         assert wait or request or block, "Need to have wait/request/block"
+        assert restart != wait or (restart == "" and wait == ""), \
+                                   "Can't restart and wait for same event"
+        assert not block or not restart, "Can't block/restart at once"
         assert type(request) == BEvent or request == "", "Request needs to be BEvent"
         assert type(wait) in (BEvent, BEventSet) or wait == "", "Wait needs to be BEvent/Set"
         assert type(block) in (BEvent, BEventSet) or block == "", "Block needs to be BEvent/Set"
@@ -180,9 +227,9 @@ class BProgram:
             logging.debug(thread.name + " requested " + str(request))
             self.requests.append(request)
             #Optional block of an event; removed once request or wait is met
-            self.wait(trigger=request, waiter=thread, blockee=block)
+            self.wait(trigger=request, waiter=thread, blockee=block, restarter=restart)
         elif wait:
-            self.wait(trigger=wait, waiter=thread, blockee=block)
+            self.wait(trigger=wait, waiter=thread, blockee=block, restarter=restart)
         elif block:
             #Permanent blocking of an event; can't be removed
             self.blocked.append(block)
@@ -228,8 +275,7 @@ class BProgram:
 
     def decide(self):
         if not self.queue:
-            #If no successful requests, there's nothing
-            #to decide on
+            #If no successful requests, there's nothing to decide on
             return
 
         event = self.queue.pop(0)
